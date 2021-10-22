@@ -2,7 +2,6 @@ import numpy as np
 import pandas as pd
 import os
 
-from geopkg.io import read_las
 from geopkg.io.file_length import file_length
 
 

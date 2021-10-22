@@ -1,0 +1,9 @@
+LICENSE
+README.md
+setup.py
+geopkg/__init__.py
+geopkg.egg-info/PKG-INFO
+geopkg.egg-info/SOURCES.txt
+geopkg.egg-info/dependency_links.txt
+geopkg.egg-info/not-zip-safe
+geopkg.egg-info/top_level.txt
