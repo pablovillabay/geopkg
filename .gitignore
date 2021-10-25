@@ -1,3 +1,2 @@
 geopkg.egg-info/
-test_.py
-test_nb.ipynb
+test/
