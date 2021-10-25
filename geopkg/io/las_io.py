@@ -120,5 +120,44 @@ def las_multi(path, skip=-999.25000):
     return logs
 
 
+def logs_categorical(logs, gral_mapper={}):
+
+    """
+
+    Set all the categorical logs as such with string names instead
+
+    Parameters:
+        logs (pd.DataFrame): well logs dataframe
+        gral_mapper (dict:dict): dict of dicts, the keys of the shallower dict level 
+            must be the categorical log names as in the well logs dataframe and the values
+            are the inner dicts. The inner level is another dict mapping floats to strings 
+            as in the categorical log legends i.e.: {1.0:'Facies1', 2.0:'Facies20, ...} in 
+            the desired order of hierarchy
+
+    """
+
+    for log in list(gral_mapper.keys()):
+        logs[log] = logs[log].map(gral_mapper[log])
+        logs[log] = logs[log].astype('category', copy=False, ordered=True)
+        logs[log] = logs[log].cat.set_categories(list(gral_mapper[log].values()), ordered=True)
+
+    return logs
+
+
+def logs_save(logs, path):
+    
+    """
+
+    Save the well logs df as a pickle file
+
+    Parameters:
+        logs (pd.DataFrame): well logs dataframe
+        path (string): path to the save folder
+
+    """
+
+    save_path = os.path.join(path, 'well_logs.pkl')
+    logs.to_pickle(save_path)
+
 
 
