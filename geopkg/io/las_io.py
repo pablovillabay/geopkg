@@ -21,32 +21,30 @@ def read_las(path, skip=-999.25000):
 
     """
 
-    file_lines = file_length(path)  # length of the file
-    log_map = np.empty([0, 2])  # empty 2-column matrix to store log names and log units in columns
+    file_lines = file_length(path) 
+    log_map = np.empty([0, 2])  
 
-    with open(path) as file:  # we don't have to remember to close the file, will commit closing when needed
+    with open(path) as file:
         j = 0
         section = 'foo'
 
         for i, line in enumerate(file):
-            if i - 1 == file_lines:  # end of LAS file, exit the loop
+            if i - 1 == file_lines: 
                 break
 
             else:
-                if line[0] == '~':  # LAS keyword lines always start with '~'
-                    if line[1] == 'C':  # ~C indicates the start of the CURVES section
+                if line[0] == '~':  
+                    if line[1] == 'C': 
                         section = 'curves'
-                    elif line[1] == 'A':  # ~A indicates the start of the log data
+                    elif line[1] == 'A':  
                         section = 'ascii'
-                        # this point is only reached once and it is good to already size the final log_matrix
-                        log_matrix = np.empty([file_lines - i - 1, log_map.shape[0]])  # empty matrix to store the logs
+                        log_matrix = np.empty([file_lines - i - 1, log_map.shape[0]]) 
 
                 elif section == 'curves':
-                    if line[0] == '#' or line[0] == '~':  # special characters that precede comment lines
+                    if line[0] == '#' or line[0] == '~': 
                         pass
                     else:
-                        curve_data = line.split()  # turn the line into a list of strings
-                        # the units are preceded with '.' normally, we skip that
+                        curve_data = line.split() 
                         log_map = np.vstack([log_map, [curve_data[0], curve_data[1][1:]]])
 
                 elif section == 'ascii':
@@ -55,15 +53,14 @@ def read_las(path, skip=-999.25000):
                     else:
                         log_data = line.split()
                         for curve in log_data:
-                            curve = float(curve)  # turn read strings into a list of floats
-                        log_matrix[j, :] = log_data  # incorporate the list to the big matrix
+                            curve = float(curve)
+                        log_matrix[j, :] = log_data
                         j += 1
 
     for i in range(log_matrix.shape[0]):
         for j in range(log_matrix.shape[1]):
-            log_matrix[i, j] = np.nan if log_matrix[i, j] == skip else log_matrix[i, j]  # skip NaN values in LAS
+            log_matrix[i, j] = np.nan if log_matrix[i, j] == skip else log_matrix[i, j] 
 
-    # we return a table of log names and units and a big table with all the log data in columns with the same order
     return log_map, log_matrix
 
 
@@ -84,10 +81,10 @@ def las2pandas(path, wellname, skip=-999.25000):
     """
 
     
-    map_, matrix = read_las(path, skip) # call read_las
-    data = pd.DataFrame(matrix)  # store the data in a dataframe
-    data.columns = map_[:, 0]  # assign the column names
-    data.insert(0, 'Well', wellname)  # create an additional Well column with the well
+    map_, matrix = read_las(path, skip) 
+    data = pd.DataFrame(matrix) 
+    data.columns = map_[:, 0]
+    data.insert(0, 'Well', wellname)
     
     return data
 
@@ -107,14 +104,13 @@ def las_multi(path, skip=-999.25000):
 
     """
 
-    logs = pd.DataFrame()  # initialize an empty dataframe
+    logs = pd.DataFrame() 
 
-    for root, dirs, files in os.walk(path):  # recursively search the folders, subfolders and files
-        for file in files:  # files is a list of file names from each subfolder
+    for root, dirs, files in os.walk(path):
+        for file in files: 
             if file.split(sep='.')[1] in ['las', 'LAS']:
-                wellname = file.split(sep='.')[0]  # the well name is the file name itself
-                filename = os.path.join(root, file)  # build the entire file path
-                # pd.concat() stacks the new dataframe to the big logs one
+                wellname = file.split(sep='.')[0] 
+                filename = os.path.join(root, file) 
                 logs = pd.concat([las2pandas(filename, wellname, skip=-999.250000), logs], axis=0, ignore_index=True, sort=False)
 
     return logs
@@ -138,7 +134,7 @@ def logs_categorical(logs, gral_mapper={}):
 
     for log in list(gral_mapper.keys()):
         logs[log] = logs[log].map(gral_mapper[log])
-        logs[log] = logs[log].astype('category', copy=False, ordered=True)
+        logs[log] = logs[log].astype('category', copy=False)
         logs[log] = logs[log].cat.set_categories(list(gral_mapper[log].values()), ordered=True)
 
     return logs
@@ -160,4 +156,21 @@ def logs_save(logs, path):
     logs.to_pickle(save_path)
 
 
+def logs_load(path):
+    
+    """
+
+    Load a pickled well logs file as dataframe
+
+    Parameters:
+        path (string): path to the save folder
+
+    Returns:
+        logs (pd.DataFrame)
+
+    """
+
+    logs = pd.read_pickle(path)
+
+    return logs
 
