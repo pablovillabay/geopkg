@@ -174,3 +174,44 @@ def logs_load(path):
 
     return logs
 
+
+def summarize_logs(df, wells, cat, props, sr=0.5):
+
+    """
+
+    Function to calculate petrophysical summaries based on well and categorical data. All logs averaged with simple
+    arithmetic means (maybe supply log permeability to have a better averaged estimation)
+
+    Parameters:
+        logs (pd.DataFrame): dataframe containing well logs data, use appropiate filters in advance to provide net logs
+        wells (string): column with well names in the logs dataframe
+        cat (string): column with filtering discrete property in the logs dataframe
+        props (list:string): list of properties (logs) to be summarized
+        sr (float): log sampling rate in project units for net thickness calculations
+
+    Returns:
+        summ (pd.DataFrame): dataframe with summarized data
+    
+    """   
+    
+    col_list = []  
+    col_list.append(wells) 
+    col_list.append(cat) 
+    [col_list.append(i) for i in props] 
+    df1 = df[col_list].dropna(axis=0, how='any')
+    col_list.append('NetH')  
+    summ = pd.DataFrame(columns=col_list)  
+    
+    idx = 0 
+    for well in df1[wells].unique():
+        for cat_ in df1[cat].unique():
+            summ.loc[idx, [wells, cat]] = [well, cat_] 
+            summ.loc[idx, props] = df1[(df1[wells]==well)&(df1[cat]==cat_)][props].mean()
+            summ.loc[idx, 'NetH'] = df1[(df1[wells]==well)&(df1[cat]==cat_)][props[0]].count() * sr
+            idx += 1
+    for col in summ.columns:
+        if col not in [wells, cat]:
+            summ[col] = pd.to_numeric(summ[col], errors='ignore') 
+
+    return summ
+
