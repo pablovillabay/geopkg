@@ -1,6 +1,7 @@
 import os
 import ntpath
 import pandas as pd
+import numpy as np
 import datetime
 from struct import unpack
 from numpy import float32, uint32, dtype, float64, array
@@ -408,3 +409,64 @@ def export_to_TI(ipt_xls, opt_xls, cases_dict, yrs_idx=10, cncpt_idx=2):
         writer.sheets = dict((ws.title, ws) for ws in book.worksheets)
         cases_dict[case][0].to_excel(writer, "WellActivity")
         writer.save()
+
+
+def import_prod_data(volfile):
+    
+    """
+
+    Import production data from *.vol formats (OFM or Petrel typical export)
+
+    Parameters:
+        path (string): path to cases folder
+
+    Returns:
+        cases_dict (dict): dict with case names as keys and well info and cases data frames as values
+
+    """
+
+    print('Reading production data from: ', volfile)
+
+    data = []
+    well = ''
+    skip = -999
+
+    with open(volfile) as f:
+        section = 'info'
+        for i, l in enumerate(f):  # read through the lines in the file (i counts and l stores each line)
+            if l == '*FIELD\n' and section == 'info': 
+                print('Field data')
+
+            elif l == '*DAILY\n' and section == 'info':
+                print('Daily production data reported')
+
+            elif 'MISSING_VALUE' in l and section == 'info':
+                skip = int(l.split()[-1])
+                print('Missing data reported as: ', str(skip))
+
+            elif l.split()[0] == '*DAY' and section == 'info':
+                headers = ['Well']
+                [headers.append(elem[1:]) for elem in l.split()]
+                print('Reported vectors:')
+                print(headers)
+
+            elif l.split()[0] == '*NAME':
+                section = 'data'
+                well = l.split()[-1]
+                print('Reading data for well: ', well)
+
+            else:
+                if section == 'data':
+                    new_line = [well]
+                    [new_line.append(elem) for elem in l.split()]
+                    data.append(new_line)
+
+    voldata = pd.DataFrame.from_records(data, columns=headers)
+    voldata[headers[1:]] = voldata[headers[1:]].apply(pd.to_numeric)
+    voldata.replace(to_replace=skip, value=np.nan, inplace=True)  
+    voldata['Date'] = pd.to_datetime(voldata[['YEAR', 'MONTH', 'DAY']])
+    for col in ['HOUR', 'MINUTE', 'SECOND', 'YEAR', 'MONTH', 'DAY']:
+        if col in voldata.columns:
+            voldata.drop(col, axis=1, inplace=True)
+    voldata.set_index(['Well', 'Date'], inplace=True, drop=True)
+    return voldata

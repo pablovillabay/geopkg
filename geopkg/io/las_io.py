@@ -4,7 +4,6 @@ import os
 
 from geopkg.io.file_length import file_length
 
-
 def read_las(path, skip=-999.25000):
 
     """
