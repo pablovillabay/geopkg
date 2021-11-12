@@ -184,16 +184,25 @@ def map_full_well_names(dir, case_name):
     """
 
     sch_file = dir + '/' + case_name + '_SCH.INC'  # build the file name to point to the SCH file
+    dat_file = dir + '/' + case_name + '.DATA'  # build the file name to point to the DATA file
+    no_wells = 0
+    with open(dat_file, 'r') as file:
+            while True:
+                line = file.readline()
+                if 'WELLDIMS' in line:  # header of the WELSPECS section
+                    line = file.readline()
+                    no_wells = int(line.split()[0])
+                    break
+
     well_mapper = {}  # initialize the new dict [old_wellname]: 'new_wellname'
     with open(sch_file, 'r') as file:
-        while True:
+        while len(well_mapper) < no_wells:
             line = file.readline()
             if 'WELSPECS' in line:  # header of the WELSPECS section
                 line = file.readline()
-                while line[:2] == '--':  # all relevant lines start as Eclipse comment
+                if line[:2] == '--':  # all relevant lines start as Eclipse comment
                     well_mapper[line.split()[0][3:-1]] = line.split()[-1][1:-1]
                     line = file.readline()  # it has a final empty comment line, no harm
-                break
 
     return well_mapper
 
@@ -237,7 +246,7 @@ def annualize_profile(df, vectors=['FOPT', 'FLPT', 'FWPT', 'FWIT', 'FGPT', 'FGIT
     return anual_df
 
 
-def read_case_profiles(path, key, well_info_path, vectors=['FOPT', 'FLPT', 'FWPT', 'FWIT', 'FGPT', 'FGIT']):
+def read_case_profiles(path, key, well_info_path=None, vectors=['FOPT', 'FLPT', 'FWPT', 'FWIT', 'FGPT', 'FGIT']):
     
     """
 
@@ -255,11 +264,13 @@ def read_case_profiles(path, key, well_info_path, vectors=['FOPT', 'FLPT', 'FWPT
 
     """
 
-    extra_info = pd.read_csv(well_info_path, sep=',', index_col=0, skipinitialspace=True)
-    extra_info.columns = [col[1:] for col in extra_info.columns]
+    if well_info_path is not None:
+        extra_info = pd.read_csv(well_info_path, sep=',', index_col=0, skipinitialspace=True)
+        extra_info.columns = [col[1:] for col in extra_info.columns]
     smspec_list = make_smspec_list(path, key)  # make the cases files list
     cases_dict = {}  # initialize the return dict
     for file_name in smspec_list:
+        print(file_name)
         smspec = read_summary(file_name)  # read the smspec
         start_date = get_case_start(smspec)  # get case start date
 
@@ -272,48 +283,71 @@ def read_case_profiles(path, key, well_info_path, vectors=['FOPT', 'FLPT', 'FWPT
             case_name = ntpath.basename(file_name).split('.')[0]
             dir = os.path.split(file_name)[0]
             try:
-                unsmry = read_summary(dir + '/' + case_name + '.UNSMRY')  # Unified summary file
+                if os.path.isfile(dir + '/' + case_name + '.UNSMRY'):
+                    # get case production into a dataframe with SMSPEC column labels
+                    unsmry = read_summary(dir + '\\' + case_name + '.UNSMRY')  # Unified summary file
+                    df = pd.DataFrame(array(unsmry[b'PARAMS']), columns=cols)
+                else:
+                    df_list = []
+                    for root, dirs, files in os.walk(dir):
+                        for file in files:
+                            file_split = file.split(sep='.')
+                            if file_split[-1][0] == 'S' and file_split[-1][1:].isdigit():
+                                summfile = read_summary(root+'\\'+file)
+                                df_list.append(pd.DataFrame(np.array(summfile[b'PARAMS']), columns=cols))
+                    df = pd.concat(df_list, axis=0, ignore_index=True)
             except:
                 continue
-            # get case production into a dataframe with SMSPEC column labels
-            df = pd.DataFrame(array(unsmry[b'PARAMS']), columns=cols)
-            del unsmry
-
+                        
             new_wells_df = new_wells_info(df)
 
             # converting days from start_date to year-month-day format
             # b'TIME' contains time in days from the start_date
             df.index = [start_date + datetime.timedelta(days=int(i[b'TIME'])) for _, i in df.iterrows()]
+            df.rename_axis('Date', inplace=True)
 
             # we want to define simplified column name for out DataFrame using only the Eclipse keywords as headings
             col_list = []
             new_cols = []
 
             for col in df.columns:
-                if b'FIELD' in col or b'TIME' in col or b'YEARS' in col:  # keep YEAR, TIME and all Field vectors
+                if b'W' in col[0] in col:  # keep YEAR, TIME and all well vectors
                     col_list.append(col)
-                    new_cols.append(str(col[0])[2:][:-1])  # clean mnemonics from column original names
+                    new_cols.append((str(col[0])[2:][:-1], str(col[1])[2:][:-1]))  # clean mnemonics from column original names
 
             df = df[col_list]  # filter only the interesting columns
-            df.columns = new_cols  # assign simplified column names to the columns
+            df.columns = pd.MultiIndex.from_tuples([tup[::-1] for tup in new_cols], names=['Well','Vector'])
+            
+            df_list = []
+            for col in list(df.columns.levels[0]):
+                if '+:+' not in col and 'FIELD' not in col:
+                    dfwell = df[[col]].copy()
+                    dfwell.columns = dfwell.columns.droplevel()
+                    dfwell['Wellname'] = col
+                    dfwell['Date'] = dfwell.index
+                    dfwell.reset_index(inplace=True, drop=True)
+                    df_list.append(dfwell)
+            df = pd.concat(df_list, axis=0)
+            df.set_index(['Wellname', 'Date'], inplace=True)
 
             well_mapper = map_full_well_names(dir, case_name)  # get a map from 8char to full well names in SCH file
-            for well in new_wells_df:
-                new_wells_df[well][0] = df.index[new_wells_df[well][0]]  # map new wells indexes to dates
-                if well in well_mapper.keys():
-                    new_wells_df[well_mapper[well]] = new_wells_df.pop(well)
 
+            for well in new_wells_df:
+                new_wells_df[well][0] = df.index[new_wells_df[well][0]]  # map wells indexes to dates
             # return the new wells info dict as a clean dataframe
             new_wells_df = pd.DataFrame(list(new_wells_df.values()), index=list(new_wells_df.keys()),
                                         columns=['init_date', 'function'])
-            new_wells_df = pd.merge(new_wells_df, extra_info, left_index=True, right_index=True, how='left')
-            cases_dict[case_name] = [new_wells_df, df[vectors]]  # store all case info in the return dict
+            new_wells_df.index.map(mapper=well_mapper)
+            if well_info_path is not None: 
+                new_wells_df = pd.merge(new_wells_df, extra_info, left_index=True, right_index=True, how='left')
+            cases_dict[case_name] = [new_wells_df, df]  # store all case info in the return dict
             del df
 
-        except:
-            print('Problem found in read_case_profiles')
+        except Exception as e:
+            print('Problem when importing case: '+ case_name)
+            print(str(e))
 
-        return cases_dict
+    return cases_dict
 
 
 def export_to_TI(ipt_xls, opt_xls, cases_dict, yrs_idx=10, cncpt_idx=2):
