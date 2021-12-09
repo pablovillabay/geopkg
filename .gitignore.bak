@@ -1,3 +1,4 @@
 geopkg.egg-info/
 test/
 geopkgenv/
+logs_df.pkl
